@@ -1,0 +1,224 @@
+/***********************************************************************
+Your name: Besher Kitaz
+
+Question 2:
+I ran:
+
+    free -m
+
+The output showed:
+
+    Total memory:     7777 MB
+    Used memory:      2130 MB
+    Free memory:      5269 MB
+    Available memory: 5646 MB
+    Swap:             2048 MB total, 0 MB used
+
+This means the system had about 7.8 GB of RAM. At the time I checked it,
+about 5.3 GB was completely free and about 5.6 GB was available for use.
+This was close to what I expected because most of the memory was still
+available. I also noticed that the "free" and "available" values are not
+the same because Linux can use memory for buffers and cache and reclaim
+some of it when programs need it.
+
+Question 4:
+First, I checked memory with memory-user not running:
+
+    free -m
+
+This showed:
+
+    Used:      2130 MB
+    Free:      5269 MB
+    Available: 5646 MB
+
+Then I started a 100 MB version of memory-user in the background:
+
+    ./memory-user 100 &
+    free -m
+
+While the program was running, free showed:
+
+    Used:      2227 MB
+    Free:      5213 MB
+    Available: 5549 MB
+
+The used memory increased by about 97 MB, which is very close to the
+100 MB requested by the program. Available memory also decreased by
+about 97 MB.
+
+I then stopped the process using:
+
+    kill $!
+    free -m
+
+After killing it, free showed:
+
+    Used:      2125 MB
+    Free:      5314 MB
+    Available: 5651 MB
+
+The memory returned to approximately its original level, which matched
+my expectations.
+
+I also tried:
+
+    ./memory-user 500 &
+    free -m
+    kill $!
+
+and:
+
+    ./memory-user 1000 &
+    free -m
+    kill $!
+
+The immediate free outputs for those two tests showed used memory around
+2126 MB and 2124 MB instead of increases of 500 MB and 1000 MB. Looking
+at the order of my commands, I ran free almost immediately after starting
+the programs, before they had enough time to stream through and touch all
+of the allocated memory. Therefore, those two particular free snapshots
+did not capture the programs after all of their requested memory had
+become resident.
+
+Later, when I used pmap after allowing the same program to run, the
+500 MB process had an RSS of 513620 KB and the 1000 MB process had an
+RSS of 1025628 KB. This confirmed that the program really did use the
+larger amounts of memory once the allocated array had been touched.
+
+For very large allocations, I would expect available memory to continue
+falling. If the program requests more memory than the system can support,
+the system may begin using swap, become much slower, malloc() may fail,
+or the operating system may terminate the process.
+
+Question 6:
+The main challenges I faced were understanding how to allocate the number
+of megabytes specified at the command line, converting megabytes into
+bytes correctly, and making the program continuously touch the memory
+instead of only allocating it.
+
+I also needed a convenient way to identify the process for pmap, so the
+program prints its PID using getpid(). Running the program in the
+background with & was also important because it allowed me to run free,
+ps, and pmap while memory-user was still running.
+
+While testing the commands, I also made a few command-line mistakes. For
+example, I first typed placeholders such as:
+
+    pmap -X <PID>
+
+literally, which caused a bash syntax error. I later replaced the
+placeholder with the actual PID. I also mistyped pmap once as "pamp".
+After correcting those mistakes, the program and the pmap commands worked
+as expected.
+
+Question 7:
+I first ran:
+
+    ps auxw
+
+to view the running processes and their PIDs. I then tested pmap on at
+least three processes.
+
+Test 1 - memory-user:
+I ran memory-user with 100 MB and found its PID with jobs -l:
+
+    ./memory-user 100 &
+    jobs -l
+    pmap -X 17862
+
+The pmap output showed a total virtual size of 105092 KB and an RSS of
+104024 KB. The largest anonymous writable mapping was 102404 KB, which
+corresponded to the 100 MB array allocated by memory-user.
+
+Test 2 - my Bash shell:
+I found the shell PID and ran pmap on it:
+
+    echo $$
+    pmap -X 3690
+
+The shell had a total virtual size of 10680 KB and an RSS of 9832 KB.
+Its address space contained the bash executable, a heap, libc, libtinfo,
+locale mappings, the dynamic linker, the stack, [vvar], and [vdso].
+
+Test 3 - the init process:
+From ps auxw I saw that PID 1 was /sbin/init, so I tried:
+
+    pmap -X 1
+
+This identified the process as /sbin/init, although it did not display
+the detailed mappings from my normal user account. This appears to be an
+access/permission limitation for that system process.
+
+The successful pmap outputs made it clear that a modern address space
+contains much more than the simplified code, heap, and stack model.
+I saw separate mappings for executable code, read-only data, writable
+data, the heap, anonymous memory, shared libraries such as libc, the
+dynamic linker, the stack, and special regions such as [vvar] and
+[vdso]. The Bash process also had locale files and libtinfo mappings.
+
+The -X flag also showed information such as each mapping's virtual
+address, permissions, size, RSS, PSS, dirty memory, anonymous memory,
+swap usage, and mapped file. Therefore, the real process address space
+is divided into many different mappings with different purposes and
+permissions.
+
+Question 8:
+I ran pmap -X on memory-user while giving it three different allocation
+sizes.
+
+Test 1 - 100 MB:
+
+    ./memory-user 100 &
+    jobs -l
+    pmap -X 19331
+
+The important pmap values were:
+
+    Large anonymous mapping size: 102404 KB
+    Large anonymous mapping RSS:  102404 KB
+    Total virtual size:           105092 KB
+    Total RSS:                    104028 KB
+
+Test 2 - 500 MB:
+
+    ./memory-user 500 &
+    jobs -l
+    pmap -X 19772
+
+The important values were:
+
+    Large anonymous mapping size: 512004 KB
+    Large anonymous mapping RSS:  512004 KB
+    Total virtual size:           514692 KB
+    Total RSS:                    513620 KB
+
+Test 3 - 1000 MB:
+
+    ./memory-user 1000 &
+    jobs -l
+    pmap -X 20233
+
+The important values were:
+
+    Large anonymous mapping size: 1024004 KB
+    Large anonymous mapping RSS:  1024004 KB
+    Total virtual size:           1026692 KB
+    Total RSS:                    1025628 KB
+
+The results matched my expectations very closely. Increasing the argument
+from 100 MB to 500 MB and then 1000 MB caused the large anonymous writable
+mapping to increase by approximately the same amount.
+
+The total process size and RSS were slightly larger than the amount I
+requested. For example, the 1000 MB test had a total virtual size of
+1026692 KB instead of exactly 1024000 KB. This is because memory-user
+needs more than just the allocated array. Its address space also includes
+the executable itself, libc, the dynamic linker, the heap, the stack,
+[vvar], [vdso], and other small mappings.
+
+Because memory-user continuously writes to every part of the array, the
+RSS of the large anonymous region was essentially the same as its size.
+This shows that the pages were not only allocated virtually; they were
+actually touched and resident in physical memory.
+***********************************************************************/
